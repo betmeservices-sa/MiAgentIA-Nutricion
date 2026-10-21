@@ -3,9 +3,9 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { fechaDe, iso } from "./format";
 import { CAMPANAS, CITAS, CLIENTES, CONVERSACIONES, MAX_PLANTILLAS, MENUS, NOTAS, PLANTILLAS_WA, POSTS, RESUMENES, STAFF, VISITAS, cliente } from "./seed";
-import { enCocina, ORDENES, paqueteDe, PLANES_ALIMENTACION, RECETARIO } from "./cocina";
+import { enCocina, ORDENES, paqueteDe, partesDe, PLANES_ALIMENTACION, RECETARIO } from "./cocina";
 import type { Rol } from "./roles";
-import type { Agenda, Campana, Cita, Cliente, Conversacion, DiaOrden, EstadoOrden, Incidencia, Mensaje, Menu, Nota, Orden, PlanAlimentacion, PlantillaWA, Plato, Post, ResumenConsulta, Visita } from "./types";
+import type { Agenda, Campana, Cita, Cliente, Conversacion, DiaOrden, EstadoOrden, Incidencia, Mensaje, Menu, Nota, Orden, PlanAlimentacion, PlantillaWA, Plato, Post, Tiempo, ResumenConsulta, Visita } from "./types";
 
 /** Filtro global: todo, solo consultas o solo entregas. */
 export type FiltroAgenda = "todas" | Agenda;
@@ -33,6 +33,12 @@ interface Estado {
   moverOrden: (id: string, estado: EstadoOrden) => void;
   /** Marca un día del paquete como listo (o lo regresa a pendiente). */
   marcarDia: (id: string, dia: number, lista: boolean) => void;
+  /**
+   * Marca o desmarca una parte de un plato de la orden (proteína, carbohidrato,
+   * vegetales, grasa); sin parte, el plato entero. Con todas sus partes, el
+   * plato queda hecho; con todos los platos hechos, la entrega queda lista.
+   */
+  marcarParte: (id: string, dia: number, tiempo: Tiempo, parte?: string) => void;
   /** Marca hechos todos los platos de cocina de un día del paquete: la entrega queda lista. */
   completarEntrega: (id: string, dia: number) => void;
   /** Entrega a reparto un día del paquete; con todos entregados, el paquete queda con el repartidor. */
@@ -329,10 +335,40 @@ export function StoreProvider({ children, rol }: { children: ReactNode; rol: Rol
         os.map((o) => {
           if (o.id !== id) return o;
           const dias = o.dias.map((d) =>
-            d.dia === dia && d.estado === "pendiente" ? { ...d, estado: "lista" as const, items: d.items.map((i) => (enCocina(i.tiempo, o.plan) ? { ...i, hecho: true } : i)) } : d,
+            d.dia === dia && d.estado === "pendiente"
+              ? { ...d, estado: "lista" as const, items: d.items.map((i) => (enCocina(i.tiempo, o.plan) ? { ...i, hecho: true, partes: partesDe(i.platoId) } : i)) }
+              : d,
           );
           const todos = dias.every((d) => d.estado !== "pendiente");
-          return { ...o, dias, estado: todos ? ("lista" as const) : o.estado === "confirmada" ? ("preparacion" as const) : o.estado, ...(todos ? { lista: `Hoy ${ahora()}` } : {}) };
+          // Dar por lista una orden sin confirmar también la confirma.
+          const confirmada = o.confirmada ?? `Hoy ${ahora()}`;
+          return { ...o, dias, confirmada, estado: todos ? ("lista" as const) : o.estado === "confirmada" || o.estado === "nueva" ? ("preparacion" as const) : o.estado, ...(todos ? { lista: `Hoy ${ahora()}` } : {}) };
+        }),
+      ),
+    [],
+  );
+  const marcarParte = useCallback(
+    (id: string, dia: number, tiempo: Tiempo, parte?: string) =>
+      setOrdenes((os) =>
+        os.map((o) => {
+          if (o.id !== id) return o;
+          const dias = o.dias.map((d) => {
+            if (d.dia !== dia || d.estado === "entregada") return d;
+            const items = d.items.map((i) => {
+              if (i.tiempo !== tiempo) return i;
+              const todas = partesDe(i.platoId);
+              let partes: string[];
+              if (!parte || !todas.length) partes = i.hecho ? [] : todas;
+              else partes = (i.partes ?? []).includes(parte) ? (i.partes ?? []).filter((x) => x !== parte) : [...(i.partes ?? []), parte];
+              const hecho = todas.length ? todas.every((x) => partes.includes(x)) : !i.hecho;
+              return { ...i, partes, hecho };
+            });
+            const completa = items.filter((i) => enCocina(i.tiempo, o.plan)).every((i) => i.hecho);
+            return { ...d, items, estado: completa ? ("lista" as const) : ("pendiente" as const) };
+          });
+          const todos = dias.every((d) => d.estado !== "pendiente");
+          const estado = todos ? ("lista" as const) : o.estado === "lista" || o.estado === "confirmada" ? ("preparacion" as const) : o.estado;
+          return { ...o, dias, estado, ...(todos ? { lista: `Hoy ${ahora()}` } : {}) };
         }),
       ),
     [],
@@ -449,7 +485,7 @@ export function StoreProvider({ children, rol }: { children: ReactNode; rol: Rol
 
   return (
     <Ctx.Provider
-      value={{ rol, clientesVersion, agregarCliente, planesAlim, guardarPlanAlim, ordenes, confirmarOrden, moverOrden, marcarDia, despacharDia, completarEntrega, incidencias, reportarIncidencia, resolverIncidencia, recetarioVersion, agregarPlatos, eliminarPlato, produccion, setProduccion, marcarPlatoHecho, extras, filtro, setFiltro, conversaciones, tomar, devolverAIA, resolver, enviar, marcarLeida, urgencias, agendarUrgencia, cerrarUrgencia, menus, agregarMenu, calendario, setCalendario, diaCalendario, setDiaCalendario, convSel, setConvSel, convPedida, limpiarConvPedida, conversacionDe, visitas, resumenes, guardarResumen, notas, agregarNota, agregarCita, citasVersion, posts, agregarPost, campanas, agregarCampana, plantillas, guardarPlantilla, eliminarPlantilla }}
+      value={{ rol, clientesVersion, agregarCliente, planesAlim, guardarPlanAlim, ordenes, confirmarOrden, moverOrden, marcarDia, despacharDia, completarEntrega, marcarParte, incidencias, reportarIncidencia, resolverIncidencia, recetarioVersion, agregarPlatos, eliminarPlato, produccion, setProduccion, marcarPlatoHecho, extras, filtro, setFiltro, conversaciones, tomar, devolverAIA, resolver, enviar, marcarLeida, urgencias, agendarUrgencia, cerrarUrgencia, menus, agregarMenu, calendario, setCalendario, diaCalendario, setDiaCalendario, convSel, setConvSel, convPedida, limpiarConvPedida, conversacionDe, visitas, resumenes, guardarResumen, notas, agregarNota, agregarCita, citasVersion, posts, agregarPost, campanas, agregarCampana, plantillas, guardarPlantilla, eliminarPlantilla }}
     >
       {children}
     </Ctx.Provider>

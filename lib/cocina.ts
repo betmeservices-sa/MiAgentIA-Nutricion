@@ -301,6 +301,18 @@ export function platosDe(o: Orden): { tiempo: Tiempo; platoId: string; ajuste?: 
   return [...m.values()].sort((a, b) => orden.indexOf(a.tiempo) - orden.indexOf(b.tiempo) || b.cantidad - a.cantidad);
 }
 
+/** Partes del plato que se van marcando en la cola (solo las que trae). */
+export const PARTES: { id: "proteina" | "carbohidrato" | "vegetales" | "grasa"; label: string }[] = [
+  { id: "proteina", label: "Proteína" },
+  { id: "carbohidrato", label: "Carbohidrato" },
+  { id: "vegetales", label: "Vegetales" },
+  { id: "grasa", label: "Grasa" },
+];
+export function partesDe(platoId: string): string[] {
+  const c = plato(platoId).componentes;
+  return c ? PARTES.filter((x) => c[x.id]?.trim()).map((x) => x.id) : [];
+}
+
 /**
  * Porciones de un plato ya preparadas un día: las marcadas como hechas más las
  * de entregas que ya están listas o entregadas.

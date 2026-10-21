@@ -72,6 +72,8 @@ export interface ItemOrden {
   ajuste?: string;
   /** La cocina ya preparó esta porción. */
   hecho?: boolean;
+  /** Partes del plato ya hechas (proteína, carbohidrato, vegetales, grasa). */
+  partes?: string[];
 }
 
 /** Un día del paquete: los platos que le tocan y si ya está listo. */

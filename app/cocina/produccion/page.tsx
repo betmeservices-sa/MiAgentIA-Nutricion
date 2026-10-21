@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Check, CheckCircle2, ChefHat, Clock, CookingPot, Minus, PencilLine, Plus, Printer, RotateCcw, ShoppingBasket, Truck, Utensils } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { ALERGENOS, COCINA_PLAN, enCocina, hechosDe, plato, RECETARIO } from "@/lib/cocina";
+import { ALERGENOS, COCINA_PLAN, enCocina, hechosDe, PARTES, partesDe, plato, RECETARIO } from "@/lib/cocina";
 import { descargarEtiquetas, type Entrega } from "@/lib/etiquetasPdf";
 import { etiquetaDia, PLAN_INFO } from "@/lib/format";
 import { cliente } from "@/lib/seed";
@@ -33,6 +33,9 @@ export default function ProduccionPage() {
   const [cli, setCli] = useState("");
   // Cola de órdenes del día (por llegada) o vista por plato del menú.
   const [vista, setVista] = useState<"cola" | "platos">("cola");
+  // Plato y porciones para agregar a la producción del día.
+  const [nuevo, setNuevo] = useState("");
+  const [cuantas, setCuantas] = useState(1);
   const porcion = (clienteId: string) => planesAlim.find((p) => p.clienteId === clienteId)?.porcion ?? "Regular";
 
   // Entregas del día: un día de cada paquete (todas, y las del cliente elegido).
@@ -105,7 +108,7 @@ export default function ProduccionPage() {
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <PageHeader
         title="Producción del día"
-        sub="Todo el menú: cuántas porciones hay que producir de cada plato y cuántas van preparadas. Marca los platos hechos y el contador se actualiza."
+        sub="La cola de órdenes del día por llegada y los platos que se hacen ese día. Marca lo que vas terminando y el contador se actualiza."
         right={
           <>
             <label className={cn("flex items-center gap-2 rounded-xl border bg-card px-3 py-2 text-[13px] shadow-sm", filtro ? "border-[var(--entregas)]" : "border-line")}>
@@ -198,7 +201,9 @@ export default function ProduccionPage() {
               )}
             </div>
             {TIPOS.map((t) => {
-              const del = platos.filter((x) => x.tiempo === t).sort((a, b) => (a.numero ?? 99) - (b.numero ?? 99));
+              // Solo los platos que se hacen ese día (de las órdenes o agregados por cocina).
+              const del = platos.filter((x) => x.tiempo === t && (aProducir(x.id) > 0 || preparados(x.id) > 0)).sort((a, b) => (a.numero ?? 99) - (b.numero ?? 99));
+              if (!del.length) return null;
               const plan = del.reduce((n, x) => n + aProducir(x.id), 0);
               const hechos = del.reduce((n, x) => n + Math.min(preparados(x.id), aProducir(x.id)), 0);
               return (
@@ -245,7 +250,7 @@ export default function ProduccionPage() {
                                 )}
                               </p>
                               <p className="text-[11.5px] text-[var(--text-3)]">
-                                {o ? `Para: ${o.clientes.join(", ")}` : n ? "Agregado por cocina" : "Sin porciones este día"}
+                                {o ? `Para: ${o.clientes.join(", ")}` : n ? "Agregado por cocina" : "Sin porciones pendientes"}
                                 {o?.sinConfirmar ? ` · ${o.sinConfirmar} de órdenes sin confirmar` : ""}
                                 {pl.contiene.length ? ` · contiene ${pl.contiene.map((a) => ALERGENOS[a].toLowerCase()).join(", ")}` : ""}
                               </p>
@@ -294,6 +299,42 @@ export default function ProduccionPage() {
                 </Card>
               );
             })}
+            {!platos.some((x) => aProducir(x.id) > 0 || preparados(x.id) > 0) && (
+              <p className="rounded-2xl border border-dashed border-line p-6 text-center text-[13px] text-[var(--text-3)]">No hay platos para producir ese día. Agrega uno del menú abajo.</p>
+            )}
+            {!filtro && (
+              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-line bg-card p-3 shadow-sm">
+                <span className="text-[13px] font-bold">Agregar plato del menú</span>
+                <select value={nuevo} onChange={(e) => setNuevo(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-[13px] sm:max-w-sm">
+                  <option value="">Elige un plato…</option>
+                  {TIPOS.map((t) => (
+                    <optgroup key={t} label={`${t}s`}>
+                      {platos
+                        .filter((x) => x.tiempo === t && aProducir(x.id) === 0 && preparados(x.id) === 0)
+                        .map((x) => (
+                          <option key={x.id} value={x.id}>
+                            {x.numero ? `${x.numero}. ` : ""}
+                            {x.nombre}
+                          </option>
+                        ))}
+                    </optgroup>
+                  ))}
+                </select>
+                <input type="number" min={1} value={cuantas} onChange={(e) => setCuantas(Math.max(1, Number(e.target.value) || 1))} aria-label="Porciones a agregar" className="w-20 rounded-lg border border-line bg-surface px-2 py-2 text-center text-[13px] font-bold" />
+                <button
+                  type="button"
+                  disabled={!nuevo}
+                  onClick={() => {
+                    cambiar(nuevo, cuantas);
+                    setNuevo("");
+                    setCuantas(1);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-lg bg-[var(--entregas)] px-3 py-2 text-[13px] font-bold text-white hover:opacity-90 disabled:opacity-40"
+                >
+                  <Plus size={14} /> Agregar
+                </button>
+              </div>
+            )}
               </>
             )}
           </div>
@@ -349,15 +390,16 @@ export default function ProduccionPage() {
 
 /**
  * Cola de órdenes del día en orden cronológico: la que llegó primero se
- * produce y se despacha primero. Cada orden muestra sus platos del día para
- * marcarlos hechos; con todo hecho queda lista y se entrega a reparto.
+ * produce y se despacha primero. Cada plato se va marcando por partes
+ * (proteína, carbohidrato, vegetales, grasa); con todo hecho, la orden queda
+ * lista. «Orden lista» está siempre disponible para darla por terminada.
  */
-function ColaDelDia({ entregas, dia }: { entregas: Entrega[]; dia: number }) {
-  const { marcarPlatoHecho, despacharDia, completarEntrega, planesAlim } = useStore();
+function ColaDelDia({ entregas }: { entregas: Entrega[]; dia: number }) {
+  const { marcarParte, despacharDia, completarEntrega, planesAlim } = useStore();
   // Más antigua primero; a igual llegada, la que sale antes en la ruta.
   const cola = [...entregas].sort((a, b) => a.o.diaLlegada - b.o.diaLlegada || a.o.llegada.localeCompare(b.o.llegada) || a.d.hora.localeCompare(b.d.hora));
   const pendientes = cola.filter(({ d }) => d.estado !== "entregada");
-  const siguiente = pendientes.find(({ o, d }) => d.estado === "pendiente" && o.estado !== "nueva");
+  const siguiente = pendientes.find(({ d }) => d.estado === "pendiente");
   const llegada = (diaLlegada: number, hora: string) => `${diaLlegada === 0 ? "Hoy" : diaLlegada === -1 ? "Ayer" : etiquetaDia(diaLlegada)} ${hora}`;
 
   if (!cola.length) return <p className="rounded-2xl border border-dashed border-line p-6 text-center text-[13px] text-[var(--text-3)]">No hay órdenes para producir ese día.</p>;
@@ -365,25 +407,22 @@ function ColaDelDia({ entregas, dia }: { entregas: Entrega[]; dia: number }) {
   return (
     <div className="space-y-3">
       <p className="text-[12.5px] text-[var(--text-3)]">
-        En orden de llegada: la más antigua es la primera en producirse y despacharse. {pendientes.length} por despachar de {cola.length}.
+        En orden de llegada: la más antigua es la primera en producirse y despacharse. Marca cada parte del plato cuando esté hecha. {pendientes.length} por despachar de {cola.length}.
       </p>
       {cola.map(({ o, d }, i) => {
         const c = cliente(o.clienteId);
         const p = planesAlim.find((x) => x.clienteId === o.clienteId);
         const items = d.items.filter((x) => enCocina(x.tiempo, o.plan));
-        const hechos = items.filter((x) => x.hecho || d.estado !== "pendiente").length;
+        const listaDia = d.estado !== "pendiente";
+        const hechos = items.filter((x) => x.hecho || listaDia).length;
         const sinConfirmar = o.estado === "nueva";
         const entregada = d.estado === "entregada";
         const lista = d.estado === "lista";
-        const esSiguiente = siguiente?.o.id === o.id;
+        const esSiguiente = siguiente?.o.id === o.id && siguiente.d.dia === d.dia;
         return (
           <section
             key={o.id + d.dia}
-            className={cn(
-              "rounded-2xl border bg-card p-4 shadow-sm",
-              esSiguiente ? "border-[var(--entregas)] ring-1 ring-[var(--entregas)]" : "border-line",
-              entregada && "opacity-60",
-            )}
+            className={cn("rounded-2xl border bg-card p-4 shadow-sm", esSiguiente ? "border-[var(--entregas)] ring-1 ring-[var(--entregas)]" : "border-line", entregada && "opacity-60")}
           >
             <div className="flex flex-wrap items-start gap-3">
               <div className="w-14 shrink-0 text-center">
@@ -404,63 +443,85 @@ function ColaDelDia({ entregas, dia }: { entregas: Entrega[]; dia: number }) {
                 <p className="text-[12px] text-[var(--text-3)]">
                   <Clock size={11} className="-mt-0.5 mr-0.5 inline" /> Sale {d.hora} · ruta {o.zona} · cocina {COCINA_PLAN[o.plan]}
                   {p ? ` · porción ${p.porcion.toLowerCase()}` : ""}
+                  {sinConfirmar && (
+                    <>
+                      {" · "}
+                      <Link href={`/cocina?orden=${o.id}`} className="font-semibold text-amber-700 hover:underline">
+                        sin confirmar: revisar en la cola
+                      </Link>
+                    </>
+                  )}
                 </p>
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1.5">
-                <span
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                    entregada ? "bg-slate-100 text-slate-600" : lista ? "bg-emerald-50 text-emerald-700" : sinConfirmar ? "bg-amber-50 text-amber-800" : "bg-violet-50 text-violet-700",
-                  )}
-                >
-                  {entregada ? "Entregada" : lista ? "Lista para reparto" : sinConfirmar ? "Sin confirmar" : `${hechos}/${items.length} platos hechos`}
+                <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", entregada ? "bg-slate-100 text-slate-600" : lista ? "bg-emerald-50 text-emerald-700" : "bg-violet-50 text-violet-700")}>
+                  {entregada ? "Entregada" : lista ? "Lista para reparto" : `${hechos}/${items.length} platos hechos`}
                 </span>
-                {sinConfirmar ? (
-                  <Link href={`/cocina?orden=${o.id}`} className="rounded-lg bg-[var(--entregas)] px-2.5 py-1 text-[12px] font-bold text-white hover:opacity-90">
-                    Confirmar en la cola
-                  </Link>
-                ) : lista ? (
-                  <button type="button" onClick={() => despacharDia(o.id, d.dia)} className="inline-flex items-center gap-1 rounded-lg bg-[var(--text)] px-2.5 py-1 text-[12px] font-bold text-white hover:opacity-90">
-                    <Truck size={13} /> Entregar a reparto
-                  </button>
-                ) : (
-                  !entregada && (
+                <div className="flex gap-1.5">
+                  {!entregada && (
                     <button
                       type="button"
                       onClick={() => completarEntrega(o.id, d.dia)}
-                      className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[12px] font-bold text-white hover:bg-emerald-700"
+                      disabled={lista}
+                      title={lista ? "Ya está lista" : "Dar la orden completa por lista"}
+                      className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[12px] font-bold text-white hover:bg-emerald-700 disabled:opacity-40"
                     >
-                      <Check size={13} /> Completar orden
+                      <Check size={13} /> {lista ? "Lista" : "Orden lista"}
                     </button>
-                  )
-                )}
+                  )}
+                  {lista && (
+                    <button type="button" onClick={() => despacharDia(o.id, d.dia)} className="inline-flex items-center gap-1 rounded-lg bg-[var(--text)] px-2.5 py-1 text-[12px] font-bold text-white hover:opacity-90">
+                      <Truck size={13} /> Entregar a reparto
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <div className="mt-3 grid gap-2 md:grid-cols-3">
               {items.map((x) => {
-                const hecho = x.hecho || d.estado !== "pendiente";
+                const pl = plato(x.platoId);
+                const hecho = x.hecho || listaDia;
+                const partes = partesDe(x.platoId);
                 return (
-                  <button
-                    key={x.tiempo}
-                    type="button"
-                    disabled={hecho || sinConfirmar}
-                    onClick={() => marcarPlatoHecho(dia, x.platoId, 1, o.clienteId)}
-                    className={cn(
-                      "flex items-start gap-2 rounded-xl border p-2.5 text-left",
-                      hecho ? "border-emerald-300 bg-emerald-50/60" : "border-line hover:border-emerald-500 hover:bg-emerald-50/40",
-                      sinConfirmar && "cursor-not-allowed opacity-60",
+                  <div key={x.tiempo} className={cn("rounded-xl border p-2.5", hecho ? "border-emerald-300 bg-emerald-50/60" : "border-line")}>
+                    <button
+                      type="button"
+                      disabled={entregada}
+                      onClick={() => marcarParte(o.id, d.dia, x.tiempo)}
+                      className="flex w-full items-start gap-2 text-left"
+                      title={hecho ? "Desmarcar el plato" : "Marcar el plato completo"}
+                    >
+                      <span className={cn("mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2", hecho ? "border-emerald-600 bg-emerald-600 text-white" : "border-[var(--border-2)]")}>
+                        {hecho && <Check size={13} strokeWidth={3} />}
+                      </span>
+                      <span className="min-w-0 text-[12.5px] leading-snug">
+                        <span className="block text-[10.5px] font-bold uppercase tracking-wide text-[var(--entregas)]">{x.tiempo}</span>
+                        <span className={cn("font-bold", hecho && "line-through decoration-emerald-600/60")}>{pl.nombre}</span>
+                      </span>
+                    </button>
+                    {x.ajuste && <p className="ml-7 mt-1 text-[11px] font-semibold text-violet-700">✎ {x.ajuste}</p>}
+                    {partes.length > 0 && (
+                      <div className="ml-7 mt-1.5 space-y-1">
+                        {PARTES.filter((k) => partes.includes(k.id)).map((k) => {
+                          const on = hecho || (x.partes ?? []).includes(k.id);
+                          return (
+                            <label key={k.id} className={cn("flex cursor-pointer items-start gap-1.5 text-[11.5px] leading-snug", entregada && "cursor-default")}>
+                              <input
+                                type="checkbox"
+                                checked={on}
+                                disabled={entregada}
+                                onChange={() => marcarParte(o.id, d.dia, x.tiempo, k.id)}
+                                className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-emerald-600"
+                              />
+                              <span className={cn(on && "text-[var(--text-3)] line-through")}>
+                                <b className="font-semibold">{k.label}:</b> {pl.componentes?.[k.id]}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
                     )}
-                    title={hecho ? "Hecho" : "Marcar este plato como hecho"}
-                  >
-                    <span className={cn("mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2", hecho ? "border-emerald-600 bg-emerald-600 text-white" : "border-[var(--border-2)]")}>
-                      {hecho && <Check size={13} strokeWidth={3} />}
-                    </span>
-                    <span className="min-w-0 text-[12.5px] leading-snug">
-                      <span className="block text-[10.5px] font-bold uppercase tracking-wide text-[var(--entregas)]">{x.tiempo}</span>
-                      <span className={cn("font-semibold", hecho && "line-through decoration-emerald-600/60")}>{plato(x.platoId).nombre}</span>
-                      {x.ajuste && <span className="mt-0.5 block text-[11px] font-semibold text-violet-700">✎ {x.ajuste}</span>}
-                    </span>
-                  </button>
+                  </div>
                 );
               })}
             </div>
