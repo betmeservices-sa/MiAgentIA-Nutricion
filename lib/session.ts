@@ -7,7 +7,7 @@ import { ACCESOS, ROLES, ROL_INFO, USUARIO_GENERAL, type Acceso } from "./roles"
 export const COOKIE = "nutri_sesion";
 export const DURACION_S = 60 * 60 * 24 * 7;
 
-export const CLAVE = process.env.DEMO_PASSWORD ?? "democ";
+export const CLAVE = process.env.DEMO_PASSWORD ?? "demonutri";
 const SECRETO = process.env.SESSION_SECRET ?? "balance-demo-secreto-local";
 
 /** Acceso que corresponde a un usuario, o null si no existe. */
