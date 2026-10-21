@@ -108,6 +108,18 @@ export interface Orden {
   lista?: string;
 }
 
+/**
+ * Producción planificada por el chef para un día: qué partes de los platos va
+ * a sacar (por ejemplo, todas las de carne y arroz). Se alimenta de las órdenes
+ * del día; cada clave es "parte|texto del componente".
+ */
+export interface Tanda {
+  id: string;
+  dia: number;
+  nombre: string;
+  claves: string[];
+}
+
 /** Aviso de la cocina a la nutricionista: sustitución, faltante o duda. */
 export interface Incidencia {
   id: string;

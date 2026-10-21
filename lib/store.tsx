@@ -5,7 +5,7 @@ import { fechaDe, iso } from "./format";
 import { CAMPANAS, CITAS, CLIENTES, CONVERSACIONES, MAX_PLANTILLAS, MENUS, NOTAS, PLANTILLAS_WA, POSTS, RESUMENES, STAFF, VISITAS, cliente } from "./seed";
 import { enCocina, ORDENES, paqueteDe, partesDe, PLANES_ALIMENTACION, RECETARIO } from "./cocina";
 import type { Rol } from "./roles";
-import type { Agenda, Campana, Cita, Cliente, Conversacion, DiaOrden, EstadoOrden, Incidencia, Mensaje, Menu, Nota, Orden, PlanAlimentacion, PlantillaWA, Plato, Post, Tiempo, ResumenConsulta, Visita } from "./types";
+import type { Agenda, Campana, Cita, Cliente, Conversacion, DiaOrden, EstadoOrden, Incidencia, Mensaje, Menu, Nota, Orden, PlanAlimentacion, PlantillaWA, Plato, Post, Tanda, Tiempo, ResumenConsulta, Visita } from "./types";
 
 /** Filtro global: todo, solo consultas o solo entregas. */
 export type FiltroAgenda = "todas" | Agenda;
@@ -39,6 +39,10 @@ interface Estado {
    * plato queda hecho; con todos los platos hechos, la entrega queda lista.
    */
   marcarParte: (id: string, dia: number, tiempo: Tiempo, parte?: string) => void;
+  /** Producciones que planificó el chef en su calendario. */
+  tandas: Tanda[];
+  guardarTanda: (t: Tanda) => void;
+  eliminarTanda: (id: string) => void;
   /** Marca hechos todos los platos de cocina de un día del paquete: la entrega queda lista. */
   completarEntrega: (id: string, dia: number) => void;
   /** Entrega a reparto un día del paquete; con todos entregados, el paquete queda con el repartidor. */
@@ -329,6 +333,12 @@ export function StoreProvider({ children, rol }: { children: ReactNode; rol: Rol
       ),
     [],
   );
+  // Calendario de producción del chef (una producción de ejemplo para hoy).
+  const [tandas, setTandas] = useState<Tanda[]>([
+    { id: "t-ej", dia: 0, nombre: "Carnes y arroz", claves: ["proteina|Lomo de res magro", "proteina|Tiras de res magra", "proteina|Tiras de res", "carbohidrato|Arroz (½ taza)", "carbohidrato|Arroz integral (½ taza)"] },
+  ]);
+  const guardarTanda = useCallback((t: Tanda) => setTandas((ts) => (ts.some((x) => x.id === t.id) ? ts.map((x) => (x.id === t.id ? t : x)) : [...ts, t])), []);
+  const eliminarTanda = useCallback((id: string) => setTandas((ts) => ts.filter((x) => x.id !== id)), []);
   const completarEntrega = useCallback(
     (id: string, dia: number) =>
       setOrdenes((os) =>
@@ -485,7 +495,7 @@ export function StoreProvider({ children, rol }: { children: ReactNode; rol: Rol
 
   return (
     <Ctx.Provider
-      value={{ rol, clientesVersion, agregarCliente, planesAlim, guardarPlanAlim, ordenes, confirmarOrden, moverOrden, marcarDia, despacharDia, completarEntrega, marcarParte, incidencias, reportarIncidencia, resolverIncidencia, recetarioVersion, agregarPlatos, eliminarPlato, produccion, setProduccion, marcarPlatoHecho, extras, filtro, setFiltro, conversaciones, tomar, devolverAIA, resolver, enviar, marcarLeida, urgencias, agendarUrgencia, cerrarUrgencia, menus, agregarMenu, calendario, setCalendario, diaCalendario, setDiaCalendario, convSel, setConvSel, convPedida, limpiarConvPedida, conversacionDe, visitas, resumenes, guardarResumen, notas, agregarNota, agregarCita, citasVersion, posts, agregarPost, campanas, agregarCampana, plantillas, guardarPlantilla, eliminarPlantilla }}
+      value={{ rol, clientesVersion, agregarCliente, planesAlim, guardarPlanAlim, ordenes, confirmarOrden, moverOrden, marcarDia, despacharDia, completarEntrega, marcarParte, tandas, guardarTanda, eliminarTanda, incidencias, reportarIncidencia, resolverIncidencia, recetarioVersion, agregarPlatos, eliminarPlato, produccion, setProduccion, marcarPlatoHecho, extras, filtro, setFiltro, conversaciones, tomar, devolverAIA, resolver, enviar, marcarLeida, urgencias, agendarUrgencia, cerrarUrgencia, menus, agregarMenu, calendario, setCalendario, diaCalendario, setDiaCalendario, convSel, setConvSel, convPedida, limpiarConvPedida, conversacionDe, visitas, resumenes, guardarResumen, notas, agregarNota, agregarCita, citasVersion, posts, agregarPost, campanas, agregarCampana, plantillas, guardarPlantilla, eliminarPlantilla }}
     >
       {children}
     </Ctx.Provider>

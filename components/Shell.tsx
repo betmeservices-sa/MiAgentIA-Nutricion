@@ -26,6 +26,7 @@ import {
   Contact,
   ChefHat,
   BookOpen,
+  CalendarRange,
   ChevronsUpDown,
   Check,
   X,
@@ -67,6 +68,7 @@ const HERRAMIENTAS_NUTRI: NavItem[] = [
 const HERRAMIENTAS_CHEF: NavItem[] = [
   { href: "/cocina", label: "Cola de órdenes", Icon: ListOrdered },
   { href: "/cocina/produccion", label: "Producción del día", Icon: CookingPot },
+  { href: "/cocina/calendario", label: "Calendario de producción", Icon: CalendarRange },
   { href: "/cocina/perfiles", label: "Perfiles de clientes", Icon: Contact },
   { href: "/cocina/menus", label: "Menús", Icon: BookOpen },
   { href: "/cocina/dashboard", label: "Dashboard", Icon: BarChart3 },
